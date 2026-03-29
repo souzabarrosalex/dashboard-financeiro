@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 
 # ==============================
 # CONFIGURAÇÃO DE SENHA
 # ==============================
-SENHA_CORRETA = "LEONI1234"  # troque pela sua senha
+SENHA_CORRETA = "LEONE1234"  # troque pela sua senha
 
 if "logado" not in st.session_state:
     st.session_state.logado = False
@@ -26,6 +27,17 @@ if not st.session_state.logado:
             st.error("Senha incorreta")
 
     st.stop()  # 🔥 trava o resto do código
+
+
+def formatar_moeda_br(x):
+   if pd.isnull(x):
+       return "-"
+   return f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+def formatar_percentual_br(x):
+    if pd.isnull(x):
+        return "-"
+    return f"{x:.2%}".replace(".", ",")
 
 # ==============================
 # SE PASSOU DAQUI → LIBERADO
@@ -78,69 +90,173 @@ df["TOTAL_CONTAS"] = df["CONTAS PAGAS"] + df["CUSTO_ADM"]
 df["RESULTADO_LIQUIDO"] = df["RECEITA"] - df["TOTAL_CONTAS"]
 df["% LUCRO"] = df["RESULTADO_LIQUIDO"] / df["TOTAL_CONTAS"]
 
+def card(titulo, valor, valor_numerico):
+    
+    # definir cores
+    if valor_numerico < 0:
+        cor_fundo = "#FFE5E5"   # vermelho claro
+        cor_texto = "#B00020"   # vermelho escuro
+    else:
+        cor_fundo = "#E3F2FD"   # azul claro
+        cor_texto = "#0D47A1"   # azul escuro
+
+    st.markdown(f"""
+    <div style="
+        background:{cor_fundo};
+        padding:15px;
+        border-radius:10px;
+        text-align:center;
+        box-shadow: 0px 2px 6px rgba(0,0,0,0.2);
+    ">
+        <div style="font-size:13px; color:{cor_texto};">{titulo}</div>
+        <div style="font-size:22px; font-weight:bold; color:{cor_texto};">
+            {valor}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 # ==============================
 # FILTROS
 # ==============================
-st.sidebar.header("🎛️ Filtros")
 
+st.sidebar.markdown("## 🎛️ Filtros")
+st.sidebar.markdown("---")
+
+if st.sidebar.button("🧹 Limpar Filtros"):
+    st.session_state.clear()
+    st.rerun()
+
+
+# ==============================
+# 1. PERÍODO (SAFRA)
+# ==============================
 sel_safra = st.sidebar.multiselect(
-    "Safra",
-    df["SAFRA"].dropna().unique()
+    "Período",
+    sorted(df["SAFRA"].dropna().unique()),
+    key="filtro_periodo"
 )
 
+df_temp = df.copy()
+
+if sel_safra:
+    df_temp = df_temp[df_temp["SAFRA"].isin(sel_safra)]
 
 # ==============================
-# FILTRO RESPONSÁVEL
+# 2. RESPONSÁVEL (depende da SAFRA)
 # ==============================
+resp_validos = sorted(
+    df_temp[
+        (df_temp["RESPONSAVEL"].notna()) &
+        (df_temp["RESPONSAVEL"] != "CUSTO INTERNO")
+    ]["RESPONSAVEL"].unique()
+)
+
 sel_resp = st.sidebar.multiselect(
     "Responsável",
-    sorted(
-        df[
-            (df["RESPONSAVEL"].notna()) &
-            (df["RESPONSAVEL"] != "CUSTO INTERNO")
-        ]["RESPONSAVEL"].unique()
-    ),
+    resp_validos,
     key="filtro_responsavel"
 )
 
-
-# ==============================
-# FILTRO OBRA (DINÂMICO)
-# ==============================
 if sel_resp:
-    df_temp = df[df["RESPONSAVEL"].isin(sel_resp)]
-else:
-    df_temp = df
+    df_temp = df_temp[df_temp["RESPONSAVEL"].isin(sel_resp)]
 
+# ==============================
+# 3. SETOR (depende do RESPONSÁVEL)
+# ==============================
+sel_setor = st.sidebar.multiselect(
+    "Setor",
+    sorted(df_temp["SETOR"].dropna().unique()),
+    key="filtro_setor"
+)
+
+if sel_setor:
+    df_temp = df_temp[df_temp["SETOR"].isin(sel_setor)]
+
+# ==============================
+# 4. OBRA (depende de tudo)
+# ==============================
 sel_obra = st.sidebar.multiselect(
-    "Obra",
+    "Obra/Administrativo",
     sorted(df_temp["OBRA"].dropna().unique()),
     key="filtro_obra"
 )
+
 
 # ==============================
 # FILTROS (ÚNICO BLOCO)
 # ==============================
 df_filtrado = df.copy()
 
-# SAFRA
 if sel_safra:
     df_filtrado = df_filtrado[df_filtrado["SAFRA"].isin(sel_safra)]
 
-# RESPONSÁVEL
 if sel_resp:
     df_filtrado = df_filtrado[df_filtrado["RESPONSAVEL"].isin(sel_resp)]
 
-# OBRA
+if sel_setor:
+    df_filtrado = df_filtrado[df_filtrado["SETOR"].isin(sel_setor)]
+
 if sel_obra:
     df_filtrado = df_filtrado[df_filtrado["OBRA"].isin(sel_obra)]
+
+
+df.columns = (
+    df.columns
+    .str.strip()
+    .str.upper()
+    .str.normalize('NFKD')
+    .str.encode('ascii', errors='ignore')
+    .str.decode('utf-8')
+)     
+
+
+id_pendente = "PENDENTE SEGMENTACAO"
+
+pendente_selecionado = sel_resp and id_pendente in sel_resp
+
+
+if pendente_selecionado:
+
+    st.markdown("### ⚠️ Pendentes de Segmentação")
+    st.markdown("---")
+
+    df_pendente = df_filtrado.copy()
+
+    # garantir só os pendentes
+    df_pendente = df_pendente[df_pendente["RESPONSAVEL"] == id_pendente]
+
+    # selecionar colunas desejadas
+    tabela_pendente = df_pendente[[
+        "Data de pagamento",
+        "Nome",
+        "Descrição",
+        "Detalhamento",
+        #"OBRA",  # centro de custo
+        "CONTAS PAGAS"
+    ]].rename(columns={
+        "Data de pagamento": "DATA PAGAMENTO",
+        "Nome": "NOME",
+        "Descrição": "DESCRICAO",
+        "Detalhamento": "DETALHAMENTO",
+        #"OBRA": "Centro de Custo",
+        "CONTAS PAGAS": "CONTAS PAGAS"
+    })
+
+    # formatação moeda
+    tabela_pendente["CONTAS PAGAS"] = tabela_pendente["CONTAS PAGAS"].apply(formatar_moeda_br)
+
+    st.dataframe(tabela_pendente, use_container_width=True, hide_index=True)
+
+    st.stop()  # 🔥 PARA O RESTO DO DASH
+
+
 
 # ==============================
 # CARDS (TOPO)
 # ==============================
 st.subheader("📌 Indicadores")
 
-total_contas_pagas = df_filtrado["CONTAS PAGAS"].sum()
+total_contas_pagas = df_filtrado[df_filtrado["RESPONSAVEL"] != "CUSTO INTERNO"]["CONTAS PAGAS"].sum()
 total_custo_adm = df_filtrado["CUSTO_ADM"].sum()
 total_contas = total_contas_pagas + total_custo_adm
 total_receita = df_filtrado["RECEITA"].sum()
@@ -150,12 +266,15 @@ perc_lucro = ((resultado / total_receita)) if total_contas != 0 else 0
 
 col1, col2, col3, col4, col5, col6 = st.columns(6)
 
-col1.metric("Contas Pagas", f"R$ {total_contas_pagas:,.0f}")
-col2.metric("Custo ADM", f"R$ {total_custo_adm:,.0f}")
-col3.metric("Total Contas", f"R$ {total_contas:,.0f}")
-col4.metric("Receita", f"R$ {total_receita:,.0f}")
-col5.metric("Resultado", f"R$ {resultado:,.0f}")
-col6.metric("% Lucro", f"{perc_lucro:.2%}")
+
+
+with col1: card("Contas Pagas", formatar_moeda_br(total_contas_pagas), total_contas_pagas)
+with col2: card("Custo ADM", formatar_moeda_br(total_custo_adm), total_custo_adm)
+with col3: card("Total Contas", formatar_moeda_br(total_contas), total_contas)
+with col4: card("Receita", formatar_moeda_br(total_receita), total_receita)
+with col5: card("Resultado", formatar_moeda_br(resultado), resultado)
+with col6: card("% Lucro", formatar_percentual_br(perc_lucro), perc_lucro)
+
 
 # ==============================
 # TABELA
@@ -191,15 +310,6 @@ def cor_negativa(val):
 
 st.subheader("📋 Detalhamento por Obra")
 
-def formatar_moeda_br(x):
-    if pd.isnull(x):
-        return "-"
-    return f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-def formatar_percentual_br(x):
-    if pd.isnull(x):
-        return "-"
-    return f"{x:.2%}".replace(".", ",")
 
 tabela = df_filtrado.groupby("OBRA").agg({
     "CONTAS PAGAS": "sum",
@@ -250,6 +360,7 @@ styled = tabela_formatada.style.applymap(
     subset=["RESULTADO_LIQUIDO", "% LUCRO"]
 )
 
+
 # ==============================
 # ESTILO (CSS)
 # ==============================
@@ -284,14 +395,36 @@ st.dataframe(
 )
 
 
+st.markdown("### 📊 Resumo por Categoria")
+st.markdown("---")
+
+tabela_categoria = df_filtrado.groupby("Categoria").agg({
+    "CONTAS PAGAS": "sum",
+    "CUSTO_ADM": "sum"
+}).reset_index()
+
+# formatação
+tabela_categoria_fmt = tabela_categoria.copy()
+
+tabela_categoria_fmt["CONTAS PAGAS"] = tabela_categoria_fmt["CONTAS PAGAS"].apply(formatar_moeda_br)
+tabela_categoria_fmt["CUSTO_ADM"] = tabela_categoria_fmt["CUSTO_ADM"].apply(formatar_moeda_br)
+
+tabela_categoria = tabela_categoria.sort_values(
+    "Categoria"
+)
+
+st.dataframe(
+    tabela_categoria_fmt,
+    use_container_width=True,
+    hide_index=True
+)
+
+
 # ==============================
 # BASE DO GRÁFICO
 # ==============================
 df_grafico = df.copy()
 
-# NÃO aplicar filtro de safra (como você pediu)
-
-# aplicar responsável
 if sel_resp:
     df_grafico = df_grafico[df_grafico["RESPONSAVEL"].isin(sel_resp)]
 
@@ -303,20 +436,143 @@ if sel_obra:
 grafico = df_grafico.groupby("SAFRA").agg({
     "TOTAL_CONTAS": "sum",
     "RECEITA": "sum"
-}).reset_index()
+}).reset_index().sort_values("SAFRA")
 
-import plotly.express as px
+grafico["RESULTADO"] = grafico["RECEITA"] + grafico["TOTAL_CONTAS"]
 
-st.subheader("📊 Evolução por Safra")
 
-fig = px.bar(
-    grafico,
-    x="SAFRA",
-    y=["TOTAL_CONTAS", "RECEITA"],
-    barmode="group",
-    text_auto=True
+st.markdown("### 📊 Resultado Líquido")
+
+grafico["cor_resultado"] = grafico["RESULTADO"].apply(
+    lambda x: "#BBDEFB" if x >= 0 else "#FFCDD2"
 )
 
-st.plotly_chart(fig, use_container_width=True)
+grafico["texto_resultado"] = grafico["RESULTADO"].apply(formatar_moeda_br)
 
+fig1 = px.bar(
+    grafico,
+    x="SAFRA",
+    y="RESULTADO",
+    text="texto_resultado"
+)
+
+fig1.update_traces(
+    marker_color=grafico["cor_resultado"],
+    textposition="auto",
+textfont=dict(
+    color=[
+        "#0D47A1" if v >= 0 else "#B00020"
+        for v in grafico["RESULTADO"]
+    ],
+    size=14,
+    family="Arial Black"
+)
+)
+
+fig1.update_layout(
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    margin=dict(t=60, b=80),
+    title=dict(
+        text="<b>Resultado Líquido</b>",
+        font=dict(color="black", size=18)
+    ),
+    xaxis=dict(
+        type="category",
+        title="",
+        tickfont=dict(
+            color="black",
+            size=12,
+            family="Arial Black"
+        )
+    ),
+    yaxis=dict(title="", tickfont=dict(color="black"))
+)
+st.plotly_chart(fig1, use_container_width=True)
+
+st.markdown("### 💰 Receita")
+
+grafico["texto_receita"] = grafico["RECEITA"].apply(formatar_moeda_br)
+
+fig2 = px.bar(
+    grafico,
+    x="SAFRA",
+    y="RECEITA",
+    text="texto_receita"
+)
+
+fig2.update_traces(
+    marker_color="#BBDEFB",
+    textposition="auto",
+    textfont=dict(
+        color="#0D47A1",
+        size=14,
+        family="Arial Black"
+    )
+)
+
+fig2.update_layout(
+    margin=dict(t=60, b=80),
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    title=dict(
+        text="<b>Receita</b>",
+        font=dict(color="black", size=18)
+    ),
+    xaxis=dict(
+        type="category",
+        title="",
+        tickfont=dict(
+            color="black",
+            size=12,
+            family="Arial Black"
+        )
+    ),
+    yaxis=dict(title="", tickfont=dict(color="black"))
+)
+
+st.plotly_chart(fig2, use_container_width=True)
+
+st.markdown("### 💸 Total Contas")
+
+grafico["texto_contas"] = grafico["TOTAL_CONTAS"].apply(formatar_moeda_br)
+
+fig3 = px.bar(
+    grafico,
+    x="SAFRA",
+    y="TOTAL_CONTAS",
+    text="texto_contas"
+)
+
+fig3.update_traces(
+    marker_color="#FFCDD2",
+    textposition="auto",
+    textfont=dict(
+        color="#B00020",
+        size=14,
+        family="Arial Black"
+    )
+)
+
+fig3.update_layout(
+    margin=dict(t=60, b=80),
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    title=dict(
+        text="<b>Total Contas</b>",
+        font=dict(color="black", size=18)
+    ),
+    xaxis=dict(
+        type="category",
+        title="",
+        tickfont=dict(
+            color="black",
+            size=12,
+            family="Arial Black"
+        )
+    ),
+    yaxis=dict(title="", tickfont=dict(color="black"))
+)
+
+st.plotly_chart(fig3, use_container_width=True)
 
