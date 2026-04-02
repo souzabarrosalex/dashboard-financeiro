@@ -5,7 +5,7 @@ import plotly.express as px
 # ==============================
 # CONFIGURAÇÃO DE SENHA
 # ==============================
-SENHA_CORRETA = "LEONE1234"  # troque pela sua senha
+SENHA_CORRETA = ""  # troque pela sua senha
 
 if "logado" not in st.session_state:
     st.session_state.logado = False
