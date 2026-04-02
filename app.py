@@ -355,7 +355,7 @@ for col in colunas_moeda:
 
 tabela_formatada["% LUCRO"] = tabela_formatada["% LUCRO"].apply(formatar_percentual_br)
 
-styled = tabela_formatada.style.applymap(
+styled = tabela_formatada.style.map(
     cor_negativa,
     subset=["RESULTADO_LIQUIDO", "% LUCRO"]
 )
