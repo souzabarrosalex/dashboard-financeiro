@@ -5,7 +5,7 @@ import plotly.express as px
 # ==============================
 # CONFIGURAÇÃO DE SENHA
 # ==============================
-SENHA_CORRETA = ""  # troque pela sua senha
+SENHA_CORRETA = "LEONE1234"  # troque pela sua senha
 
 if "logado" not in st.session_state:
     st.session_state.logado = False
@@ -82,11 +82,22 @@ def tratar_numero(col):
 for col in ["CONTAS PAGAS", "CUSTO_ADM", "RECEITA"]:
     df[col] = tratar_numero(df[col])
 
+# garantir que CUSTO_ARTHUR também seja numérico
+df["CUSTO_ARTHUR"] = tratar_numero(df["CUSTO_ARTHUR"])
+
+# REGRA DO CUSTO ADM DINÂMICO
+df["CUSTO_ADM_CALCULADO"] = df.apply(
+    lambda row: row["CUSTO_ARTHUR"]
+    if (row["RESPONSAVEL"] == "ARTHUR") or (row["SETOR"] == "CUSTO INTERNO")
+    else row["CUSTO_ADM"],
+    axis=1
+)    
+
 
 # ==============================
 # CÁLCULOS
 # ==============================
-df["TOTAL_CONTAS"] = df["CONTAS PAGAS"] + df["CUSTO_ADM"]
+df["TOTAL_CONTAS"] = df["CONTAS PAGAS"] + df["CUSTO_ADM_CALCULADO"]
 df["RESULTADO_LIQUIDO"] = df["RECEITA"] - df["TOTAL_CONTAS"]
 df["% LUCRO"] = df["RESULTADO_LIQUIDO"] / df["TOTAL_CONTAS"]
 
@@ -123,7 +134,9 @@ st.sidebar.markdown("## 🎛️ Filtros")
 st.sidebar.markdown("---")
 
 if st.sidebar.button("🧹 Limpar Filtros"):
-    st.session_state.clear()
+    for key in ["filtro_periodo", "filtro_responsavel", "filtro_setor", "filtro_obra"]:
+        if key in st.session_state:
+            del st.session_state[key]
     st.rerun()
 
 
@@ -256,8 +269,15 @@ if pendente_selecionado:
 # ==============================
 st.subheader("📌 Indicadores")
 
-total_contas_pagas = df_filtrado[df_filtrado["RESPONSAVEL"] != "CUSTO INTERNO"]["CONTAS PAGAS"].sum()
-total_custo_adm = df_filtrado["CUSTO_ADM"].sum()
+filtros_vazios = not (sel_safra or sel_resp or sel_setor or sel_obra)
+
+total_contas_pagas = df_filtrado["CONTAS PAGAS"].sum()
+
+if filtros_vazios:
+    total_custo_adm = df["CUSTO_ADM"].sum()  # só custo interno original
+else:
+    total_custo_adm = df_filtrado["CUSTO_ADM_CALCULADO"].sum()
+
 total_contas = total_contas_pagas + total_custo_adm
 total_receita = df_filtrado["RECEITA"].sum()
 resultado = total_receita + total_contas
@@ -313,11 +333,12 @@ st.subheader("📋 Detalhamento por Obra")
 
 tabela = df_filtrado.groupby("OBRA").agg({
     "CONTAS PAGAS": "sum",
-    "CUSTO_ADM": "sum",
+    "CUSTO_ADM_CALCULADO": "sum",
     "TOTAL_CONTAS": "sum",
     "RECEITA": "sum"
     }).reset_index()
 
+tabela = tabela.rename(columns={"CUSTO_ADM_CALCULADO": "CUSTO_ADM"})
 tabela["RESULTADO_LIQUIDO"] = tabela["CONTAS PAGAS"] + tabela["CUSTO_ADM"] + tabela["RECEITA"]
 tabela["RECEITA_AJUSTADA"] = tabela["RECEITA"].replace(0, 0.001)
 
@@ -400,8 +421,12 @@ st.markdown("---")
 
 tabela_categoria = df_filtrado.groupby("Categoria").agg({
     "CONTAS PAGAS": "sum",
-    "CUSTO_ADM": "sum"
+    "CUSTO_ADM_CALCULADO": "sum"
 }).reset_index()
+
+tabela_categoria = tabela_categoria.rename(columns={
+    "CUSTO_ADM_CALCULADO": "CUSTO_ADM"
+})
 
 # formatação
 tabela_categoria_fmt = tabela_categoria.copy()
