@@ -5,7 +5,7 @@ import plotly.express as px
 # ==============================
 # CONFIGURAÇÃO DE SENHA
 # ==============================
-SENHA_CORRETA = "LEONE1234"  # troque pela sua senha
+SENHA_CORRETA = "1"  # troque pela sua senha
 
 if "logado" not in st.session_state:
     st.session_state.logado = False
@@ -52,6 +52,7 @@ st.title("📊 Dashboard Financeiro")
 # CARREGAR BASE (AGORA CORRETO)
 # ==============================
 df = pd.read_excel("PAINEL.xlsx")
+df_medicao = pd.read_excel("PAINEL_MEDICAO.xlsx")
 
 # ==============================
 # RENOMEAR COLUNAS
@@ -93,6 +94,8 @@ df["CUSTO_ADM_CALCULADO"] = df.apply(
     axis=1
 )    
 
+# garantir receita numérica
+df_medicao["RECEITA"] = tratar_numero(df_medicao["RECEITA"])
 
 # ==============================
 # CÁLCULOS
@@ -120,7 +123,7 @@ def card(titulo, valor, valor_numerico):
         box-shadow: 0px 2px 6px rgba(0,0,0,0.2);
     ">
         <div style="font-size:13px; color:{cor_texto};">{titulo}</div>
-        <div style="font-size:22px; font-weight:bold; color:{cor_texto};">
+        <div style="font-size:20px; font-weight:bold; color:{cor_texto};">
             {valor}
         </div>
     </div>
@@ -164,14 +167,74 @@ resp_validos = sorted(
     ]["RESPONSAVEL"].unique()
 )
 
-sel_resp = st.sidebar.multiselect(
-    "Responsável",
-    resp_validos,
-    key="filtro_responsavel"
+# ==============================
+# RESPONSÁVEL EM BOTÕES ESTILIZADOS
+# ==============================
+
+# ==============================
+# RESPONSÁVEL EM BOTÕES
+# ==============================
+
+st.sidebar.markdown("### 👤 Responsável")
+
+# opções
+opcoes_resp = ["TODOS"] + resp_validos
+
+# estado inicial
+if "filtro_responsavel" not in st.session_state:
+    st.session_state.filtro_responsavel = "TODOS"
+
+st.sidebar.markdown("""
+<style>
+
+/* esconder bolinha */
+div[role="radiogroup"] input[type="radio"] {
+    display: none;
+}
+
+/* botão padrão */
+div[role="radiogroup"] label {
+    background: #F0F2F6;
+    padding: 12px 14px;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    font-weight: bold;
+    color: #333333 !important;
+    border: none;
+}
+
+/* texto */
+div[role="radiogroup"] label p {
+    color: #333333 !important;
+    font-weight: bold;
+    margin: 0;
+}
+
+/* selecionado */
+div[role="radiogroup"] label:has(input:checked) {
+    background: #C62828 !important;
+}
+
+/* texto selecionado */
+div[role="radiogroup"] label:has(input:checked) p {
+    color: white !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# radio
+sel_resp = st.sidebar.radio(
+    "Selecione",
+    opcoes_resp,
+    key="filtro_responsavel",
+    label_visibility="collapsed"
 )
 
-if sel_resp:
-    df_temp = df_temp[df_temp["RESPONSAVEL"].isin(sel_resp)]
+# aplicar filtro
+if sel_resp != "TODOS":
+    df_temp = df_temp[df_temp["RESPONSAVEL"] == sel_resp]
 
 # ==============================
 # 3. SETOR (depende do RESPONSÁVEL)
@@ -203,14 +266,42 @@ df_filtrado = df.copy()
 if sel_safra:
     df_filtrado = df_filtrado[df_filtrado["SAFRA"].isin(sel_safra)]
 
-if sel_resp:
-    df_filtrado = df_filtrado[df_filtrado["RESPONSAVEL"].isin(sel_resp)]
+if sel_resp != "TODOS":
+    df_filtrado = df_filtrado[
+        df_filtrado["RESPONSAVEL"] == sel_resp
+    ]
 
 if sel_setor:
     df_filtrado = df_filtrado[df_filtrado["SETOR"].isin(sel_setor)]
 
 if sel_obra:
     df_filtrado = df_filtrado[df_filtrado["OBRA"].isin(sel_obra)]
+
+ # ==============================
+# FILTROS BASE MEDIÇÃO
+# ==============================
+
+df_medicao_filtrado = df_medicao.copy()
+
+if sel_safra:
+    df_medicao_filtrado = df_medicao_filtrado[
+        df_medicao_filtrado["SAFRA"].isin(sel_safra)
+    ]
+
+if sel_resp != "TODOS":
+    df_medicao_filtrado = df_medicao_filtrado[
+        df_medicao_filtrado["RESPONSAVEL"] == sel_resp
+    ]
+
+if sel_setor:
+    df_medicao_filtrado = df_medicao_filtrado[
+        df_medicao_filtrado["SETOR"].isin(sel_setor)
+    ]
+
+if sel_obra:
+    df_medicao_filtrado = df_medicao_filtrado[
+        df_medicao_filtrado["OBRA"].isin(sel_obra)
+    ]   
 
 
 df.columns = (
@@ -262,7 +353,20 @@ if pendente_selecionado:
 
     st.stop()  # 🔥 PARA O RESTO DO DASH
 
+# ==============================
+# CONTROLE EXIBIÇÃO CARD LUCRO
+# ==============================
 
+obra_filtrada = bool(sel_obra)
+
+quantidade_filtros_ativos = sum([
+    bool(sel_safra),
+    bool(sel_resp),
+    bool(sel_setor),
+    bool(sel_obra)
+])
+
+mostrar_card_lucro = quantidade_filtros_ativos <= 1
 
 # ==============================
 # CARDS (TOPO)
@@ -284,16 +388,99 @@ resultado = total_receita + total_contas
 
 perc_lucro = ((resultado / total_receita)) if total_contas != 0 else 0
 
-col1, col2, col3, col4, col5, col6 = st.columns(6)
+# quantidade dinâmica de cards
+quantidade_cards = 4  # total contas, receita, resultado
 
+if not obra_filtrada:
+    quantidade_cards += 2  # contas pagas + custo adm
 
+if mostrar_card_lucro:
+    quantidade_cards += 1  # % lucro
 
-with col1: card("Contas Pagas", formatar_moeda_br(total_contas_pagas), total_contas_pagas)
-with col2: card("Custo ADM", formatar_moeda_br(total_custo_adm), total_custo_adm)
-with col3: card("Total Contas", formatar_moeda_br(total_contas), total_contas)
-with col4: card("Receita", formatar_moeda_br(total_receita), total_receita)
-with col5: card("Resultado", formatar_moeda_br(resultado), resultado)
-with col6: card("% Lucro", formatar_percentual_br(perc_lucro), perc_lucro)
+colunas = st.columns(quantidade_cards)
+
+indice = 0
+
+# quantidade dinâmica de cards
+quantidade_cards = 4  # total contas, receita, resultado
+
+if not obra_filtrada:
+    quantidade_cards += 2  # contas pagas + custo adm
+
+if mostrar_card_lucro:
+    quantidade_cards += 1
+
+colunas = st.columns(quantidade_cards)
+
+indice = 0
+
+# ==============================
+# CONTAS PAGAS
+# ==============================
+if not obra_filtrada:
+    with colunas[indice]:
+        card(
+            "Contas Pagas",
+            formatar_moeda_br(total_contas_pagas),
+            total_contas_pagas
+        )
+    indice += 1
+
+# ==============================
+# CUSTO ADM
+# ==============================
+if not obra_filtrada:
+    with colunas[indice]:
+        card(
+            "Custo ADM",
+            formatar_moeda_br(total_custo_adm),
+            total_custo_adm
+        )
+    indice += 1
+
+# ==============================
+# TOTAL CONTAS
+# ==============================
+with colunas[indice]:
+    card(
+        "Total Pagamento",
+        formatar_moeda_br(total_contas),
+        total_contas
+    )
+indice += 1
+
+# ==============================
+# RECEITA
+# ==============================
+with colunas[indice]:
+    card(
+        "Receita",
+        formatar_moeda_br(total_receita),
+        total_receita
+    )
+indice += 1
+
+# ==============================
+# RESULTADO
+# ==============================
+with colunas[indice]:
+    card(
+        "Resultado",
+        formatar_moeda_br(resultado),
+        resultado
+    )
+indice += 1
+
+# ==============================
+# % LUCRO
+# ==============================
+if mostrar_card_lucro:
+    with colunas[indice]:
+        card(
+            "% Lucro",
+            formatar_percentual_br(perc_lucro),
+            perc_lucro
+        )
 
 
 # ==============================
@@ -352,6 +539,9 @@ tabela["% LUCRO"] = tabela["RESULTADO_LIQUIDO"] / tabela["RECEITA_AJUSTADA"]
 
 tabela = tabela.drop(columns=["RECEITA_AJUSTADA"], errors="ignore")
 
+if not mostrar_card_lucro:
+    tabela = tabela.drop(columns=["% LUCRO"], errors="ignore")
+
 # ==============================
 # FORMATAÇÃO
 # ==============================
@@ -374,11 +564,29 @@ colunas_moeda = [
 for col in colunas_moeda:
     tabela_formatada[col] = tabela_formatada[col].apply(formatar_moeda_br)
 
-tabela_formatada["% LUCRO"] = tabela_formatada["% LUCRO"].apply(formatar_percentual_br)
+if "% LUCRO" in tabela_formatada.columns:
+    tabela_formatada["% LUCRO"] = (
+        tabela_formatada["% LUCRO"]
+        .apply(formatar_percentual_br)
+    )
+
+# esconder coluna % lucro quando houver mais de 1 filtro
+if not mostrar_card_lucro:
+
+    if "% LUCRO" in tabela_formatada.columns:
+        tabela_formatada = tabela_formatada.drop(columns=["% LUCRO"])
+
+    if "% LUCRO" in tabela.columns:
+        tabela = tabela.drop(columns=["% LUCRO"])
+
+colunas_estilo = ["RESULTADO_LIQUIDO"]
+
+if "% LUCRO" in tabela_formatada.columns:
+    colunas_estilo.append("% LUCRO")
 
 styled = tabela_formatada.style.map(
     cor_negativa,
-    subset=["RESULTADO_LIQUIDO", "% LUCRO"]
+    subset=colunas_estilo
 )
 
 
@@ -411,6 +619,36 @@ tabela_exibicao = tabela.drop(columns=["RECEITA_AJUSTADA"], errors="ignore")
 
 st.dataframe(
     styled,
+    use_container_width=True,
+    hide_index=True
+)
+
+# ==============================
+# TABELA MEDIÇÃO
+# ==============================
+
+st.subheader("📑 Painel Medição")
+
+tabela_medicao = df_medicao_filtrado[[
+    "DATA",
+    "OBRA",
+    "RECEITA"
+]].copy()
+
+# formatar data
+tabela_medicao["DATA"] = pd.to_datetime(
+    tabela_medicao["DATA"],
+    errors="coerce"
+).dt.strftime("%d/%m/%Y")
+
+# formatar receita
+tabela_medicao["RECEITA"] = tabela_medicao["RECEITA"].apply(formatar_moeda_br)
+
+# ordenar por data
+tabela_medicao = tabela_medicao.sort_values("DATA")
+
+st.dataframe(
+    tabela_medicao,
     use_container_width=True,
     hide_index=True
 )
@@ -450,12 +688,17 @@ st.dataframe(
 # ==============================
 df_grafico = df.copy()
 
-if sel_resp:
-    df_grafico = df_grafico[df_grafico["RESPONSAVEL"].isin(sel_resp)]
+df_grafico = df.copy()
 
-# aplicar obra
+if sel_resp != "TODOS":
+    df_grafico = df_grafico[
+        df_grafico["RESPONSAVEL"] == sel_resp
+    ]
+
 if sel_obra:
-    df_grafico = df_grafico[df_grafico["OBRA"].isin(sel_obra)]
+    df_grafico = df_grafico[
+        df_grafico["OBRA"].isin(sel_obra)
+    ]
 
 
 grafico = df_grafico.groupby("SAFRA").agg({
