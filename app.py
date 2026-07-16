@@ -54,12 +54,10 @@ st.title("📊 Dashboard Financeiro")
 df = pd.read_excel("PAINEL.xlsx")
 df_medicao = pd.read_excel("PAINEL_MEDICAO.xlsx")
 
-# Converter SAFRA para data (ajuste o formato se necessário)
-df["SAFRA_DATA"] = pd.to_datetime(df["SAFRA"], errors="coerce")
-df["ANO"] = df["SAFRA_DATA"].dt.year
+# Criar coluna ANO a partir da SAFRA
+df["ANO"] = df["SAFRA"].astype(str).str[:4]
 
-df_medicao["SAFRA_DATA"] = pd.to_datetime(df_medicao["SAFRA"], errors="coerce")
-df_medicao["ANO"] = df_medicao["SAFRA_DATA"].dt.year
+df_medicao["ANO"] = df_medicao["SAFRA"].astype(str).str[:4]
 
 # ==============================
 # RENOMEAR COLUNAS
@@ -156,23 +154,20 @@ sel_ano = st.sidebar.multiselect(
     key="filtro_ano"
 )
 
-
-# ==============================
-# 1. PERÍODO (SAFRA)
-# ==============================
-sel_safra = st.sidebar.multiselect(
-    "Período",
-    sorted(df["SAFRA"].dropna().unique()),
-    key="filtro_periodo"
-)
+st.write(df[["SAFRA", "ANO"]].drop_duplicates().sort_values("SAFRA"))
 
 df_temp = df.copy()
+
 
 if sel_ano:
     df_temp = df_temp[df_temp["ANO"].isin(sel_ano)]
 
-if sel_safra:
-    df_temp = df_temp[df_temp["SAFRA"].isin(sel_safra)]
+
+sel_safra = st.sidebar.multiselect(
+    "Período",
+    sorted(df_temp["SAFRA"].dropna().unique()),
+    key="filtro_periodo"
+)
 
 # ==============================
 # 2. RESPONSÁVEL (depende da SAFRA)
