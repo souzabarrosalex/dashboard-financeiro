@@ -54,6 +54,13 @@ st.title("📊 Dashboard Financeiro")
 df = pd.read_excel("PAINEL.xlsx")
 df_medicao = pd.read_excel("PAINEL_MEDICAO.xlsx")
 
+# Converter SAFRA para data (ajuste o formato se necessário)
+df["SAFRA_DATA"] = pd.to_datetime(df["SAFRA"], errors="coerce")
+df["ANO"] = df["SAFRA_DATA"].dt.year
+
+df_medicao["SAFRA_DATA"] = pd.to_datetime(df_medicao["SAFRA"], errors="coerce")
+df_medicao["ANO"] = df_medicao["SAFRA_DATA"].dt.year
+
 # ==============================
 # RENOMEAR COLUNAS
 # ==============================
@@ -137,10 +144,17 @@ st.sidebar.markdown("## 🎛️ Filtros")
 st.sidebar.markdown("---")
 
 if st.sidebar.button("🧹 Limpar Filtros"):
-    for key in ["filtro_periodo", "filtro_responsavel", "filtro_setor", "filtro_obra"]:
+    for key in ["filtro_ano","filtro_periodo", "filtro_responsavel", "filtro_setor", "filtro_obra"]:
         if key in st.session_state:
             del st.session_state[key]
     st.rerun()
+
+
+sel_ano = st.sidebar.multiselect(
+    "Ano",
+    sorted(df["ANO"].dropna().unique()),
+    key="filtro_ano"
+)
 
 
 # ==============================
@@ -153,6 +167,9 @@ sel_safra = st.sidebar.multiselect(
 )
 
 df_temp = df.copy()
+
+if sel_ano:
+    df_temp = df_temp[df_temp["ANO"].isin(sel_ano)]
 
 if sel_safra:
     df_temp = df_temp[df_temp["SAFRA"].isin(sel_safra)]
@@ -263,6 +280,9 @@ sel_obra = st.sidebar.multiselect(
 # ==============================
 df_filtrado = df.copy()
 
+if sel_ano:
+    df_filtrado = df_filtrado[df_filtrado["ANO"].isin(sel_ano)]
+
 if sel_safra:
     df_filtrado = df_filtrado[df_filtrado["SAFRA"].isin(sel_safra)]
 
@@ -282,6 +302,11 @@ if sel_obra:
 # ==============================
 
 df_medicao_filtrado = df_medicao.copy()
+
+if sel_ano:
+    df_medicao_filtrado = df_medicao_filtrado[
+        df_medicao_filtrado["ANO"].isin(sel_ano)
+    ]
 
 if sel_safra:
     df_medicao_filtrado = df_medicao_filtrado[
