@@ -54,10 +54,23 @@ st.title("📊 Dashboard Financeiro")
 df = pd.read_excel("PAINEL.xlsx")
 df_medicao = pd.read_excel("PAINEL_MEDICAO.xlsx")
 
-# Criar coluna ANO a partir da SAFRA
-df["ANO"] = df["SAFRA"].astype(str).str[:4]
+# ==============================
+# ANO / MÊS / TRIMESTRE
+# ==============================
 
+# BASE PRINCIPAL
+df["ANO"] = df["SAFRA"].astype(str).str[:4]
+df["MES"] = pd.to_numeric(df["SAFRA"].astype(str).str[5:7], errors="coerce")
+df["TRIMESTRE"] = df["MES"].apply(
+    lambda x: f"T{int((x-1)//3)+1}" if pd.notnull(x) else None
+)
+
+# BASE MEDIÇÃO
 df_medicao["ANO"] = df_medicao["SAFRA"].astype(str).str[:4]
+df_medicao["MES"] = pd.to_numeric(df_medicao["SAFRA"].astype(str).str[5:7], errors="coerce")
+df_medicao["TRIMESTRE"] = df_medicao["MES"].apply(
+    lambda x: f"T{int((x-1)//3)+1}" if pd.notnull(x) else None
+)
 
 # ==============================
 # RENOMEAR COLUNAS
@@ -142,7 +155,7 @@ st.sidebar.markdown("## 🎛️ Filtros")
 st.sidebar.markdown("---")
 
 if st.sidebar.button("🧹 Limpar Filtros"):
-    for key in ["filtro_ano","filtro_periodo", "filtro_responsavel", "filtro_setor", "filtro_obra"]:
+    for key in ["filtro_trimestre","filtro_ano","filtro_periodo", "filtro_responsavel", "filtro_setor", "filtro_obra"]:
         if key in st.session_state:
             del st.session_state[key]
     st.rerun()
@@ -154,20 +167,28 @@ sel_ano = st.sidebar.multiselect(
     key="filtro_ano"
 )
 
-st.write(df[["SAFRA", "ANO"]].drop_duplicates().sort_values("SAFRA"))
-
 df_temp = df.copy()
-
 
 if sel_ano:
     df_temp = df_temp[df_temp["ANO"].isin(sel_ano)]
 
+sel_trimestre = st.sidebar.multiselect(
+    "Trimestre",
+    sorted(df_temp["TRIMESTRE"].dropna().unique()),
+    key="filtro_trimestre"
+)
+
+if sel_trimestre:
+    df_temp = df_temp[df_temp["TRIMESTRE"].isin(sel_trimestre)]
 
 sel_safra = st.sidebar.multiselect(
     "Período",
     sorted(df_temp["SAFRA"].dropna().unique()),
     key="filtro_periodo"
 )
+
+if sel_safra:
+    df_temp = df_temp[df_temp["SAFRA"].isin(sel_safra)]
 
 # ==============================
 # 2. RESPONSÁVEL (depende da SAFRA)
@@ -278,6 +299,9 @@ df_filtrado = df.copy()
 if sel_ano:
     df_filtrado = df_filtrado[df_filtrado["ANO"].isin(sel_ano)]
 
+if sel_trimestre:
+    df_filtrado = df_filtrado[df_filtrado["TRIMESTRE"].isin(sel_trimestre)]
+
 if sel_safra:
     df_filtrado = df_filtrado[df_filtrado["SAFRA"].isin(sel_safra)]
 
@@ -301,6 +325,11 @@ df_medicao_filtrado = df_medicao.copy()
 if sel_ano:
     df_medicao_filtrado = df_medicao_filtrado[
         df_medicao_filtrado["ANO"].isin(sel_ano)
+    ]
+
+if sel_trimestre:
+    df_medicao_filtrado = df_medicao_filtrado[
+        df_medicao_filtrado["TRIMESTRE"].isin(sel_trimestre)
     ]
 
 if sel_safra:
